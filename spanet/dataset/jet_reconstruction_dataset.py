@@ -417,8 +417,6 @@ class JetReconstructionDataset(Dataset):
                 new_total_sample = n_tot_sample/n_targets
                 vector_class_weights = new_total_sample / bin_counts[index_class]
                 vector_class_weights[torch.isinf(vector_class_weights)] = 0
-                for i in range(1,7):
-                    print(f'mean = {(event_weights[targets == i]*vector_class_weights[i]).mean()}')
                 
             return vector_class_weights
 
