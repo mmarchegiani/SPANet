@@ -245,3 +245,4 @@ ipython_config.py
 *_logs/
 *_output/
 environment/
+myenv

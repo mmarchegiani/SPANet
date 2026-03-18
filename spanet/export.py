@@ -124,13 +124,14 @@ def main(
         output_log_transform: bool,
         output_embeddings: bool,
         gpu: bool,
-        opset: int
+        opset: int,
+        checkpoint: str = None
 ):
     major_version, minor_version, *_ = torch.__version__.split(".")
     if int(major_version) == 2 and int(minor_version) == 0:
         raise RuntimeError("ONNX export with Torch 2.0.x is not working. Either install 2.1 or 1.13.")
 
-    model = load_model(log_directory, cuda=gpu)
+    model = load_model(log_directory, checkpoint=checkpoint, cuda=gpu)
 
     # Create wrapped model with flat inputs and outputs
     wrapped_model = WrappedModel(model, input_log_transform, output_log_transform, output_embeddings)
@@ -170,6 +171,9 @@ if __name__ == '__main__':
 
     parser.add_argument("output_file", type=str,
                         help="Name to output the ONNX model to.")
+
+    parser.add_argument("--checkpoint", type=str, default=None,
+                        help="Optional: specific checkpoint file name to load (default: best.ckpt or last.ckpt)")
 
     parser.add_argument("-g", "--gpu", action="store_true",
                         help="Trace the network on a gpu.")

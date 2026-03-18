@@ -12,6 +12,8 @@ from spanet.dataset.types import Evaluation, Outputs, Source
 from spanet.network.jet_reconstruction.jet_reconstruction_network import extract_predictions
 
 from collections import defaultdict
+import os
+import re
 
 
 def dict_concatenate(tree):
@@ -23,6 +25,66 @@ def dict_concatenate(tree):
             output[key] = np.concatenate(value)
 
     return output
+
+def select_best_checkpoint(base_folder_path, metric_name, mode='min'):
+    """
+    Selects the checkpoint file with the best metric value.
+    Works for metric names with 0, 1, or multiple slashes.
+    
+    Args:
+        base_folder_path (str): Base output path (e.g., spanet output version folder).
+        metric_name (str): Metric name like 'total_loss', 'validation_loss/total_loss', etc.
+        mode (str): 'min' to select lowest value, 'max' to select highest value.
+
+    Returns:
+        str: Full path to the best checkpoint file.
+    """
+    metric_parts = metric_name.split('/')
+
+    if len(metric_parts) == 1:
+        # No slashes, simple metric
+        metric_folder = ''
+        metric_filename = metric_parts[0]
+    else:
+        # Slashes exist
+        metric_folder = os.path.join(*metric_parts[:-1])
+        metric_filename = metric_parts[-1]
+
+    # Build full folder path
+    if metric_folder:
+        folder_path = os.path.join(base_folder_path, 'checkpoints', metric_folder)
+    else:
+        folder_path = os.path.join(base_folder_path, 'checkpoints')
+
+    if not os.path.exists(folder_path):
+        raise FileNotFoundError(f"Folder {folder_path} does not exist!")
+
+    safe_metric = re.escape(metric_filename)
+    pattern = re.compile(rf'{safe_metric}=(-?[0-9.]+)(?:-v(\d+))?\.ckpt')
+
+    files = os.listdir(folder_path)
+
+    metric_files = []
+
+    for filename in files:
+        match = pattern.search(filename)
+        if match:
+            value = float(match.group(1))
+            version = int(match.group(2)) if match.group(2) else -1  # No version = -1
+            metric_files.append((value, version, filename))
+
+    if not metric_files:
+        raise ValueError(f"No checkpoint files found matching metric '{metric_filename}' in {folder_path}.")
+
+    if mode == 'min':
+        best_file = min(metric_files, key=lambda x: (x[0], -x[1]))[2]
+    elif mode == 'max':
+        best_file = max(metric_files, key=lambda x: (x[0], x[1]))[2]
+    else:
+        raise ValueError("mode must be 'min' or 'max'.")
+
+    # Return full path to the best checkpoint
+    return os.path.join(folder_path, best_file)
 
 
 def tree_concatenate(trees):
@@ -44,9 +106,12 @@ def load_model(
     fp16: bool = False,
     checkpoint: Optional[str] = None
 ) -> JetReconstructionModel:
+
+    # Load the options that were used for this run and set the testing-dataset value
+    options = Options.load(f"{log_directory}/options.json")
     # Load the best-performing checkpoint on validation data
     if checkpoint is None:
-        checkpoint = sorted(glob(f"{log_directory}/checkpoints/epoch*"))[-1]
+        checkpoint = select_best_checkpoint(log_directory, options.checkpoint_metric, mode=options.checkpoint_mode)
         print(f"Loading: {checkpoint}")
 
     checkpoint = torch.load(checkpoint, map_location='cpu')
@@ -54,8 +119,7 @@ def load_model(
     if fp16:
         checkpoint = tree_map(lambda x: x.half(), checkpoint)
 
-    # Load the options that were used for this run and set the testing-dataset value
-    options = Options.load(f"{log_directory}/options.json")
+    
 
     # Override options from command line arguments
     if testing_file is not None:

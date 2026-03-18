@@ -407,25 +407,27 @@ class JetReconstructionDataset(Dataset):
                 vector_class_weights = (1 - beta) / (1 - (beta ** torch.bincount(targets)))
                 vector_class_weights[torch.isinf(vector_class_weights)] = 0
                 vector_class_weights = vector_class_weights.shape[0] * vector_class_weights / vector_class_weights.sum()
+                
             else:
                 # Assuming that the signal corresponds to target=1, and the background corresponds to target!=1
                 bin_counts = torch.bincount(targets, weights=event_weights)
-                sumw_sig = bin_counts[1]
-                sumw_bkg = bin_counts.sum() - sumw_sig
-                n_bkg = sum(targets != 1)
-                norm_bkg = n_bkg / sumw_bkg
-                norm_sig = n_bkg / sumw_sig
                 index_class = torch.arange(bin_counts.shape[0])
-                vector_class_weights = torch.where(index_class == 1, norm_sig, norm_bkg)
+                n_targets = len(np.unique(targets))
+                n_tot_sample = len(event_weights)
+                new_total_sample = n_tot_sample/n_targets
+                vector_class_weights = new_total_sample / bin_counts[index_class]
                 vector_class_weights[torch.isinf(vector_class_weights)] = 0
-
+                for i in range(1,7):
+                    print(f'mean = {(event_weights[targets == i]*vector_class_weights[i]).mean()}')
+                
             return vector_class_weights
 
         return OrderedDict((
-            (key, compute_effective_counts(value, event_weights))
+            (key, compute_effective_counts(value, self.event_weights))
             for key, value in self.classifications.items()
             if value is not None
         ))
+
 
     def limit_dataset_to_mask(self, event_mask: Tensor):
         for input_name, source in self.sources.items():

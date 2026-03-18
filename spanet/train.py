@@ -141,6 +141,7 @@ def main(
     callbacks = [
         ModelCheckpoint(
             verbose=options.verbose_output,
+            filename=f'{{{options.checkpoint_metric}:.3f}}',
             monitor=options.checkpoint_metric,
             save_top_k=options.checkpoint_save_top_k,
             mode=options.checkpoint_mode,
