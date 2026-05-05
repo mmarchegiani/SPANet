@@ -11,8 +11,6 @@ from spanet.dataset.jet_reconstruction_dataset import JetReconstructionDataset
 from spanet.network.learning_rate_schedules import get_linear_schedule_with_warmup
 from spanet.network.learning_rate_schedules import get_cosine_with_hard_restarts_schedule_with_warmup
 
-import mdmm
-
 class JetReconstructionBase(pl.LightningModule):
     def __init__(self, options: Options):
         super(JetReconstructionBase, self).__init__()
@@ -176,6 +174,8 @@ class JetReconstructionBase(pl.LightningModule):
         ]
 
         if self.options.mdmm_loss_scale > 0:
+            import mdmm
+
             if self.options.assignment_loss_scale <= 0:
                 raise ValueError("MDMM loss requires assignment loss to be enabled.")
             if self.options.classification_loss_scale <= 0:

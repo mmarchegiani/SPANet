@@ -12,8 +12,6 @@ from spanet.dataset.regressions import regression_loss
 from spanet.network.jet_reconstruction.jet_reconstruction_network import JetReconstructionNetwork
 from spanet.network.utilities.divergence_losses import assignment_cross_entropy_loss, jensen_shannon_divergence
 
-import mdmm
-
 def numpy_tensor_array(tensor_list):
     output = np.empty(len(tensor_list), dtype=object)
     output[:] = tensor_list
@@ -317,6 +315,8 @@ class JetReconstructionTraining(JetReconstructionNetwork):
             total_loss += classification_loss
 
         if self.options.mdmm_loss_scale > 0:
+            import mdmm
+
             if self.options.assignment_loss_scale <= 0:
                 raise ValueError("MDMM loss requires assignment loss to be enabled.")
             if self.options.classification_loss_scale < 0:

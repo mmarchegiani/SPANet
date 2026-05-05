@@ -26,10 +26,17 @@ setup(
         'pyyaml',
         'opt_einsum',
         'scikit-learn',
-        'rich',
-        're',
-        'os'
+        'rich'
     ],
+    extras_require={
+        'onnx' : [
+            'onnx',
+            'onnxscript'
+        ],
+        'mdmm': [
+            'mdmm'
+        ]
+    },
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Environment :: Console',
