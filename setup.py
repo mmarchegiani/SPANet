@@ -31,7 +31,8 @@ setup(
     extras_require={
         'onnx' : [
             'onnx',
-            'onnxscript'
+            'onnxscript',
+            'onnxruntime'
         ],
         'mdmm': [
             'mdmm'
