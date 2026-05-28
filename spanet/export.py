@@ -4,6 +4,7 @@ from typing import List
 import torch
 from torch.nn import functional as F
 from torch.utils._pytree import tree_map
+from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
 
@@ -125,13 +126,23 @@ def main(
         output_embeddings: bool,
         gpu: bool,
         opset: int,
-        checkpoint: str = None
+        checkpoint: str = None,
+        dataset_limit: float = 0.01,
 ):
     major_version, minor_version, *_ = torch.__version__.split(".")
     if int(major_version) == 2 and int(minor_version) == 0:
         raise RuntimeError("ONNX export with Torch 2.0.x is not working. Either install 2.1 or 1.13.")
 
-    model = load_model(log_directory, checkpoint=checkpoint, cuda=gpu)
+    print("-" * 60)
+    print(f"Loading model from: {log_directory}")
+    print(f"  Dataset limit: {dataset_limit * 100:.2g}% of training data")
+    print("-" * 60)
+
+    model = load_model(log_directory, checkpoint=checkpoint, cuda=gpu, dataset_limit=dataset_limit)
+
+    print("-" * 60)
+    print("Creating wrapped model for ONNX export...")
+    print("-" * 60)
 
     # Create wrapped model with flat inputs and outputs
     wrapped_model = WrappedModel(model, input_log_transform, output_log_transform, output_embeddings)
@@ -142,18 +153,20 @@ def main(
 
     input_names, output_names, dynamic_axes = onnx_specification(model, output_log_transform, output_embeddings)
 
-    batch = next(iter(model.train_dataloader()))
+    print("Fetching example batch for ONNX tracing...")
+    # Use a minimal DataLoader (batch_size=1, no drop_last) to avoid loading the full dataset
+    trace_loader = DataLoader(model.training_dataset, batch_size=1, shuffle=False)
+    batch = next(iter(trace_loader))
     sources = batch.sources
     if gpu:
-        sources = tree_map(lambda x: x.cuda(), batch.sources)
-    sources = tree_map(lambda x: x[:1], sources)
+        sources = tree_map(lambda x: x.cuda(), sources)
 
     print("-" * 60)
     print(f"Compiling network to ONNX model: {output_file}")
     if not input_log_transform:
         print("WARNING -- No input log transform! User must apply log transform manually. -- WARNING")
     print("-" * 60)
-    
+
     wrapped_model.to_onnx(
         output_file,
         sources,
@@ -162,6 +175,8 @@ def main(
         dynamic_axes=dynamic_axes,
         opset_version=opset
     )
+
+    print(f"ONNX model saved to: {output_file}")
 
 
 if __name__ == '__main__':
@@ -189,6 +204,10 @@ if __name__ == '__main__':
 
     parser.add_argument("--output-embeddings", action="store_true",
                         help="Exported model will also output the embeddings for every part of the event.")
+
+    parser.add_argument("--dataset-limit", type=float, default=0.01,
+                        help="Fraction of training dataset to load (default: 0.01). "
+                             "Only a single batch is needed for ONNX tracing, so a small value speeds up export.")
 
     arguments = parser.parse_args()
     main(**arguments.__dict__)

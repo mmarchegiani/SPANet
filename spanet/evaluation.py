@@ -104,7 +104,8 @@ def load_model(
     batch_size: Optional[int] = None,
     cuda: bool = False,
     fp16: bool = False,
-    checkpoint: Optional[str] = None
+    checkpoint: Optional[str] = None,
+    dataset_limit: Optional[float] = None,
 ) -> JetReconstructionModel:
 
     # Load the options that were used for this run and set the testing-dataset value
@@ -119,7 +120,7 @@ def load_model(
     if fp16:
         checkpoint = tree_map(lambda x: x.half(), checkpoint)
 
-    
+
 
     # Override options from command line arguments
     if testing_file is not None:
@@ -130,6 +131,10 @@ def load_model(
 
     if batch_size is not None:
         options.batch_size = batch_size
+
+    if dataset_limit is not None:
+        options.dataset_limit = dataset_limit
+        options.testing_file = ""
 
     # Create model and disable all training operations for speed
     model = JetReconstructionModel(options)
