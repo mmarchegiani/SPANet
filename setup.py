@@ -21,6 +21,7 @@ setup(
         'h5py>=3.9',
         'numba>=0.57',
         'pytorch-lightning>=2.0',
+        'tensorboard',
         'tqdm',
         'sympy',
         'pyyaml',

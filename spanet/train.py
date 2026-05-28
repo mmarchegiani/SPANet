@@ -1,6 +1,7 @@
 from argparse import ArgumentParser
 from typing import Optional
 from os import getcwd, makedirs, environ
+import glob
 import shutil
 import json
 
@@ -24,6 +25,31 @@ from pytorch_lightning.callbacks import (
 from spanet import JetReconstructionModel, Options
 
 
+class TensorBoardSyncCallback(pl.Callback):
+    """Copy the tfevents file from local disk to a remote path (e.g. AFS) after each
+    validation epoch.  AFS uses whole-file caching: the SummaryWriter keeps the file
+    open, so writes only become visible on AFS when the file is closed (end of
+    training).  Writing to local disk and copying periodically works around this."""
+
+    def __init__(self, local_log_dir: str, remote_log_dir: str):
+        self.local_log_dir = local_log_dir
+        self.remote_log_dir = remote_log_dir
+
+    def _sync(self, trainer):
+        if not trainer.is_global_zero:
+            return
+        trainer.logger.experiment.flush()
+        makedirs(self.remote_log_dir, exist_ok=True)
+        for src in glob.glob(f"{self.local_log_dir}/events.out.tfevents.*"):
+            shutil.copy2(src, self.remote_log_dir)
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        self._sync(trainer)
+
+    def on_train_end(self, trainer, pl_module):
+        self._sync(trainer)
+
+
 def main(
         event_file: str,
         training_file: str,
@@ -35,6 +61,7 @@ def main(
 
         log_dir: str,
         name: str,
+        local_log_dir: Optional[str],
 
         torch_script: bool,
         fp16: bool,
@@ -131,16 +158,34 @@ def main(
 
     # Construct the logger for this training run. Logs will be saved in {logdir}/{name}/version_i
     log_dir = getcwd() if log_dir is None else log_dir
+
+    # When the log directory is on AFS, the tfevents file is only flushed to the server
+    # when the SummaryWriter is closed (end of training), because AFS uses whole-file
+    # caching.  Writing to a local path and syncing to AFS after each epoch works around
+    # this.  Pass --local_log_dir /tmp/spanet_logs (or any non-AFS path) to enable this.
+    tb_log_dir = local_log_dir if local_log_dir is not None else log_dir
     logger = (
         WandbLogger(name=name, save_dir=log_dir)
         if _WANDB_AVAILABLE else
-        TensorBoardLogger(save_dir=log_dir, name=name)
+        TensorBoardLogger(save_dir=tb_log_dir, name=name)
     )
+
+    # When local_log_dir is used, determine the version number now so both the
+    # checkpoint dirpath and the sync target use the same versioned directory.
+    if local_log_dir is not None:
+        local_version_dir = logger.log_dir                              # e.g. /tmp/.../version_0
+        remote_version_dir = f"{log_dir}/{name}/version_{logger.version}"
+        checkpoint_dirpath = f"{remote_version_dir}/checkpoints"
+    else:
+        local_version_dir = None
+        remote_version_dir = None
+        checkpoint_dirpath = None  # PL default: trainer.log_dir/checkpoints
 
     # Create the checkpoint for this training run. We will save the best validation networks based on 'accuracy'
     callbacks = [
         ModelCheckpoint(
             verbose=options.verbose_output,
+            dirpath=checkpoint_dirpath,
             filename=f'{{{options.checkpoint_metric}:.3f}}',
             monitor=options.checkpoint_metric,
             save_top_k=options.checkpoint_save_top_k,
@@ -152,6 +197,12 @@ def main(
         RichProgressBar() if _RICH_AVAILABLE else TQDMProgressBar(),
         RichModelSummary(max_depth=1) if _RICH_AVAILABLE else ModelSummary(max_depth=1)
     ]
+
+    if local_log_dir is not None:
+        callbacks.append(TensorBoardSyncCallback(
+            local_log_dir=local_version_dir,
+            remote_log_dir=remote_version_dir
+        ))
 
     epochs = options.epochs
     profiler = None
@@ -218,6 +269,11 @@ if __name__ == '__main__':
 
     parser.add_argument("-l", "--log_dir", type=str, default=None,
                         help="Output directory for the checkpoints and tensorboard logs. Default to current directory.")
+
+    parser.add_argument("-ll", "--local_log_dir", type=str, default=None,
+                        help="Local (non-AFS) directory for the tfevents file. Use this when --log_dir points to AFS "
+                             "to enable per-epoch TensorBoard updates (AFS only flushes on file close). "
+                             "Checkpoints are still saved to --log_dir. Example: /tmp/spanet_logs")
 
     parser.add_argument("-n", "--name", type=str, default="spanet_output",
                         help="The sub-directory to create for this run and an identifier for WANDB.")
