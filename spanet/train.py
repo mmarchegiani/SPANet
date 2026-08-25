@@ -186,7 +186,7 @@ def main(
         ModelCheckpoint(
             verbose=options.verbose_output,
             dirpath=checkpoint_dirpath,
-            filename=f'{{{options.checkpoint_metric}:.3f}}',
+            filename='{epoch}-{step}-{' + options.checkpoint_metric + ':.3f}',
             monitor=options.checkpoint_metric,
             save_top_k=options.checkpoint_save_top_k,
             mode=options.checkpoint_mode,
